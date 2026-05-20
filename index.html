@@ -1,0 +1,846 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <title>GDrive Player</title>
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="GDrive Player">
+    <meta name="theme-color" content="#1a1a2e">
+    <link rel="apple-touch-icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 180 180'><rect fill='%231a1a2e' width='180' height='180' rx='40'/><text x='90' y='125' text-anchor='middle' font-size='100'>▶</text></svg>">
+    <link rel="manifest" href="manifest.json">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #1a1a2e;
+            color: #eee;
+            min-height: 100vh;
+        }
+        header {
+            background: #16213e;
+            padding: 1rem 2rem;
+            padding-top: calc(1rem + env(safe-area-inset-top));
+            border-bottom: 2px solid #0f3460;
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+        }
+        header h1 {
+            font-size: 1.4rem;
+            color: #e94560;
+            flex: 1;
+        }
+        .header-btn {
+            background: #0f3460;
+            color: #eee;
+            border: none;
+            padding: 0.5rem 1rem;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 0.9rem;
+        }
+        .header-btn:hover { background: #1a4a7a; }
+        .header-btn.hidden { display: none; }
+        .header-btn.danger { background: #5a2030; }
+        .header-btn.danger:hover { background: #7a2040; }
+
+        .user-info {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            font-size: 0.85rem;
+            color: #aaa;
+        }
+        .user-info img {
+            width: 28px;
+            height: 28px;
+            border-radius: 50%;
+        }
+
+        #login-view {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 70vh;
+            gap: 1.5rem;
+            padding: 2rem;
+            text-align: center;
+        }
+        #login-view h2 { font-size: 2rem; color: #e94560; }
+        #login-view p { color: #888; max-width: 400px; line-height: 1.6; }
+        .google-btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.7rem;
+            background: #fff;
+            color: #333;
+            border: none;
+            padding: 0.7rem 1.5rem;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 1rem;
+            font-weight: 500;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+        }
+        .google-btn:hover { background: #f1f1f1; }
+        .google-btn svg { width: 20px; height: 20px; }
+
+        #folder-select-view {
+            display: none;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 70vh;
+            gap: 1.5rem;
+            padding: 2rem;
+            text-align: center;
+        }
+        #folder-select-view h2 { color: #ddd; }
+        #folder-select-view p { color: #888; max-width: 400px; line-height: 1.6; }
+        .pick-btn {
+            background: #e94560;
+            color: #fff;
+            border: none;
+            padding: 0.8rem 2rem;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 1rem;
+            font-weight: 500;
+        }
+        .pick-btn:hover { background: #c33a52; }
+
+        #folder-title {
+            display: none;
+            padding: 1.2rem 2rem 0;
+            font-size: 1.1rem;
+            color: #ccc;
+            font-weight: 600;
+        }
+
+        #loading { text-align: center; padding: 4rem; font-size: 1.2rem; color: #888; display: none; }
+        #error { text-align: center; padding: 2rem; color: #e94560; display: none; white-space: pre-wrap; }
+
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+            gap: 1.2rem;
+            padding: 2rem;
+        }
+
+        .card {
+            background: #16213e;
+            border-radius: 8px;
+            padding: 1.2rem;
+            cursor: pointer;
+            transition: transform 0.15s, box-shadow 0.15s;
+            border: 1px solid #0f3460;
+            position: relative;
+        }
+        .card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 20px rgba(233, 69, 96, 0.2);
+            border-color: #e94560;
+        }
+        .card h3 { font-size: 0.95rem; line-height: 1.4; color: #ddd; }
+        .card .meta { margin-top: 0.5rem; font-size: 0.8rem; color: #888; }
+        .card.folder-card h3::before { content: "\1F4C1 "; }
+        .card.video-card h3::before { content: "\25B6 "; }
+
+        .status-dot {
+            position: absolute;
+            top: 0.8rem;
+            right: 0.8rem;
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            background: #555;
+        }
+        .status-dot.in_progress { background: #f0a500; }
+        .status-dot.watched { background: #34a853; }
+
+        .progress-bar { margin-top: 0.6rem; height: 4px; background: #0f3460; border-radius: 2px; overflow: hidden; }
+        .progress-bar-fill { height: 100%; background: #34a853; transition: width 0.3s; }
+        .progress-text { margin-top: 0.3rem; font-size: 0.75rem; color: #888; }
+
+        #player-view { display: none; padding: 2rem; max-width: 1200px; margin: 0 auto; }
+        #player-view h2 { margin-bottom: 1rem; font-size: 1.2rem; color: #ddd; }
+        #player-view iframe { width: 100%; aspect-ratio: 16/9; border: none; border-radius: 8px; background: #000; }
+        .player-nav { display: flex; justify-content: space-between; margin-top: 1rem; }
+        .player-nav button {
+            background: #0f3460; color: #eee; border: none;
+            padding: 0.6rem 1.2rem; border-radius: 4px; cursor: pointer; font-size: 0.9rem;
+        }
+        .player-nav button:hover { background: #1a4a7a; }
+        .player-nav button:disabled { opacity: 0.3; cursor: not-allowed; }
+
+        .status-controls { display: flex; gap: 0.5rem; margin-top: 1rem; align-items: center; }
+        .status-controls span { font-size: 0.85rem; color: #888; margin-right: 0.5rem; }
+        .status-btn {
+            border: 1px solid #0f3460; background: #1a1a2e; color: #aaa;
+            padding: 0.4rem 0.8rem; border-radius: 4px; cursor: pointer; font-size: 0.8rem; transition: all 0.15s;
+        }
+        .status-btn:hover { border-color: #888; color: #eee; }
+        .status-btn.active-pending { border-color: #555; background: #333; color: #eee; }
+        .status-btn.active-in_progress { border-color: #f0a500; background: #3d2e00; color: #f0a500; }
+        .status-btn.active-watched { border-color: #34a853; background: #0d2e15; color: #34a853; }
+
+        .nav-tools {
+            display: none;
+            align-items: center;
+            gap: 0.5rem;
+        }
+        .nav-tools.visible { display: flex; }
+        #search-input {
+            background: #1a1a2e;
+            border: 1px solid #0f3460;
+            color: #eee;
+            padding: 0.4rem 0.7rem;
+            border-radius: 4px;
+            font-size: 0.85rem;
+            width: 180px;
+        }
+        #search-input:focus { outline: none; border-color: #e94560; }
+        #search-input::placeholder { color: #666; }
+
+        #search-results {
+            display: none;
+            position: absolute;
+            top: 100%;
+            right: 0;
+            background: #16213e;
+            border: 1px solid #0f3460;
+            border-radius: 4px;
+            max-height: 300px;
+            overflow-y: auto;
+            width: 320px;
+            z-index: 100;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+        }
+        #search-results .search-item {
+            padding: 0.6rem 1rem;
+            cursor: pointer;
+            font-size: 0.85rem;
+            border-bottom: 1px solid #0f3460;
+            color: #ccc;
+        }
+        #search-results .search-item:hover { background: #1a4a7a; }
+        #search-results .search-item:last-child { border-bottom: none; }
+        .search-wrap { position: relative; }
+
+        .nav-tools .header-btn.active {
+            background: #3d2e00;
+            border: 1px solid #f0a500;
+            color: #f0a500;
+        }
+
+
+    </style>
+</head>
+<body>
+    <header>
+        <button class="header-btn hidden" id="back-btn" onclick="goBack()">&larr; Back</button>
+        <h1>GDrive Player</h1>
+        <div class="nav-tools" id="nav-tools">
+            <button class="header-btn" id="in-progress-btn" onclick="showInProgress()">In Progress</button>
+            <div class="search-wrap">
+                <input type="text" id="search-input" placeholder="Search courses..." oninput="handleSearch(this.value)">
+                <div id="search-results"></div>
+            </div>
+        </div>
+        <div class="user-info hidden" id="user-info"></div>
+        <button class="header-btn hidden" id="change-folder-btn" onclick="openPicker()">Change Folder</button>
+        <button class="header-btn danger hidden" id="signout-btn" onclick="handleSignout()">Sign Out</button>
+    </header>
+
+    <div id="login-view">
+        <h2>GDrive Player</h2>
+        <p>Sign in with your Google account to browse and play videos directly from your Google Drive.</p>
+        <button class="google-btn" onclick="handleSignin()">
+            <svg viewBox="0 0 24 24"><path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/><path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/><path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/></svg>
+            Sign in with Google
+        </button>
+    </div>
+
+
+    <div id="folder-select-view">
+        <h2>Choose your folder</h2>
+        <p>Select the root folder in your Google Drive that contains your course folders.</p>
+        <button class="pick-btn" onclick="openPicker()">Browse Google Drive</button>
+    </div>
+
+    <div id="folder-title"></div>
+    <div id="loading">Loading...</div>
+    <div id="error"></div>
+    <div class="grid" id="grid"></div>
+
+    <div id="player-view">
+        <h2 id="player-title"></h2>
+        <iframe id="player-frame" allow="autoplay; encrypted-media" allowfullscreen></iframe>
+        <div class="player-nav">
+            <button id="prev-btn" onclick="playPrev()">&larr; Previous</button>
+            <button id="next-btn" onclick="playNext()">Next &rarr;</button>
+        </div>
+        <div class="status-controls">
+            <span>Mark as:</span>
+            <button class="status-btn" onclick="setStatus('pending')" id="btn-pending">Pending</button>
+            <button class="status-btn" onclick="setStatus('in_progress')" id="btn-in_progress">In Progress</button>
+            <button class="status-btn" onclick="setStatus('watched')" id="btn-watched">Watched</button>
+        </div>
+    </div>
+
+    <script src="https://accounts.google.com/gsi/client" async></script>
+    <script src="https://apis.google.com/js/api.js" async></script>
+    <script type="module">
+        import { initializeApp } from 'https://www.gstatic.com/firebasejs/11.8.1/firebase-app.js';
+        import { getFirestore, doc, setDoc, getDoc } from 'https://www.gstatic.com/firebasejs/11.8.1/firebase-firestore.js';
+
+        const SCOPES = 'https://www.googleapis.com/auth/drive.readonly https://www.googleapis.com/auth/userinfo.profile';
+
+        const CLIENT_ID = '615211154096-cq0sldrcrtbm4i7lkmrtsrm6p56c9iev.apps.googleusercontent.com';
+        const firebaseConfig = {
+            apiKey: 'AIzaSyCa56XmeSWJ1I9AiCxRO3QOrI7w96VvbpI',
+            authDomain: 'nailthemix-player.firebaseapp.com',
+            projectId: 'nailthemix-player',
+            appId: '1:615211154096:web:6784c2e9b0ea77721d5975'
+        };
+        let accessToken = null;
+        let rootFolder = localStorage.getItem('gdp_root_folder') || '';
+        let currentFolder = null;
+        let currentFolderName = '';
+        let currentVideos = [];
+        let currentVideoIndex = 0;
+        let navHistory = [];
+        let tokenClient = null;
+        let pickerInited = false;
+        let gisInited = false;
+
+        let fbDb = null;
+        let fbUid = null;
+
+        function initFirebase() {
+            try {
+                const app = initializeApp(firebaseConfig);
+                fbDb = getFirestore(app);
+            } catch (e) {
+                console.error('Firebase init error:', e);
+            }
+        }
+
+        // --- Firestore (uses user's Google ID as uid, no Firebase Auth needed) ---
+        async function getVideoStatus(videoId) {
+            if (!fbDb || !fbUid) return 'pending';
+            try {
+                const snap = await getDoc(doc(fbDb, 'users', fbUid, 'progress', videoId));
+                return snap.exists() ? snap.data().status : 'pending';
+            } catch (e) {
+                console.warn('Firestore read error:', e.message);
+                return 'pending';
+            }
+        }
+
+        async function setVideoStatus(videoId, status, folderName, folderId) {
+            if (!fbDb || !fbUid) {
+                showError('Not connected to database. Check Firebase config.');
+                return;
+            }
+            try {
+                await setDoc(doc(fbDb, 'users', fbUid, 'progress', videoId), {
+                    status,
+                    folderId,
+                    folderName,
+                    updatedAt: new Date().toISOString()
+                });
+            } catch (e) {
+                showError('Failed to save: ' + e.message);
+            }
+        }
+
+        async function getFolderProgress(videoIds) {
+            if (!fbDb || !fbUid || videoIds.length === 0) return { watched: 0, inProgress: 0, total: videoIds.length };
+            let watched = 0, inProgress = 0;
+            try {
+                const promises = videoIds.map(id => getDoc(doc(fbDb, 'users', fbUid, 'progress', id)));
+                const snaps = await Promise.all(promises);
+                snaps.forEach(snap => {
+                    if (snap.exists()) {
+                        const s = snap.data().status;
+                        if (s === 'watched') watched++;
+                        else if (s === 'in_progress') inProgress++;
+                    }
+                });
+            } catch (e) {}
+            return { watched, inProgress, total: videoIds.length };
+        }
+
+        // --- Google Sign-In (GIS) ---
+        function initGis() {
+            if (!CLIENT_ID) return;
+            tokenClient = google.accounts.oauth2.initTokenClient({
+                client_id: CLIENT_ID,
+                scope: SCOPES,
+                callback: handleTokenResponse,
+            });
+            gisInited = true;
+        }
+
+        function handleSignin() {
+            if (!gisInited) initGis();
+            tokenClient.requestAccessToken();
+        }
+        window.handleSignin = handleSignin;
+
+        async function handleTokenResponse(response) {
+            if (response.error) {
+                if (response.error === 'interaction_required' || response.error === 'consent_required') return;
+                showError('Auth error: ' + response.error);
+                return;
+            }
+            accessToken = response.access_token;
+            localStorage.setItem('gdp_access_token', accessToken);
+            await loadUserAndStart();
+        }
+
+        async function loadUserAndStart() {
+            try {
+                const res = await fetch('https://www.googleapis.com/oauth2/v2/userinfo', {
+                    headers: { Authorization: `Bearer ${accessToken}` }
+                });
+                if (!res.ok) throw new Error('Failed to get user info');
+                const user = await res.json();
+                fbUid = user.id;
+                localStorage.setItem('gdp_uid', fbUid);
+
+                const el = document.getElementById('user-info');
+                el.innerHTML = `<img src="${user.picture}" alt="">${user.given_name || user.name}`;
+                el.classList.remove('hidden');
+            } catch (e) {
+                console.warn('User info error:', e);
+            }
+            onLoggedIn();
+        }
+
+        function onLoggedIn() {
+            document.getElementById('login-view').style.display = 'none';
+            document.getElementById('loading').style.display = 'none';
+            document.getElementById('signout-btn').classList.remove('hidden');
+            document.getElementById('change-folder-btn').classList.remove('hidden');
+            document.getElementById('nav-tools').classList.add('visible');
+
+            if (rootFolder) {
+                loadFolder(rootFolder);
+                cacheFolderList();
+            } else {
+                document.getElementById('folder-select-view').style.display = 'flex';
+            }
+        }
+
+        function handleSignout() {
+            if (accessToken) {
+                google.accounts.oauth2.revoke(accessToken);
+            }
+            accessToken = null;
+            rootFolder = '';
+            localStorage.removeItem('gdp_access_token');
+            localStorage.removeItem('gdp_uid');
+            localStorage.removeItem('gdp_root_folder');
+            location.reload();
+        }
+        window.handleSignout = handleSignout;
+
+        // --- Picker ---
+        function openPicker() {
+            if (!pickerInited || !accessToken) return;
+            const picker = new google.picker.PickerBuilder()
+                .setOAuthToken(accessToken)
+                .addView(new google.picker.DocsView()
+                    .setIncludeFolders(true)
+                    .setSelectFolderEnabled(true)
+                    .setMimeTypes('application/vnd.google-apps.folder'))
+                .setTitle('Select your courses root folder')
+                .setCallback(pickerCallback)
+                .build();
+            picker.setVisible(true);
+        }
+        window.openPicker = openPicker;
+
+        function pickerCallback(data) {
+            if (data.action === google.picker.Action.PICKED) {
+                rootFolder = data.docs[0].id;
+                localStorage.setItem('gdp_root_folder', rootFolder);
+                document.getElementById('folder-select-view').style.display = 'none';
+                navHistory = [];
+                loadFolder(rootFolder);
+            }
+        }
+
+        // --- Drive API ---
+        async function listFiles(folderId) {
+            let allFiles = [];
+            let pageToken = '';
+            do {
+                const url = `https://www.googleapis.com/drive/v3/files?q='${folderId}'+in+parents+and+trashed=false&fields=files(id,name,mimeType),nextPageToken&orderBy=name&pageSize=1000${pageToken ? '&pageToken=' + pageToken : ''}`;
+                const res = await fetch(url, { headers: { Authorization: `Bearer ${accessToken}` } });
+                if (!res.ok) {
+                    if (res.status === 401) {
+                        showError('Session expired. Please sign in again.');
+                        return [];
+                    }
+                    throw new Error(`Drive API error: ${res.status}`);
+                }
+                const data = await res.json();
+                allFiles = allFiles.concat(data.files || []);
+                pageToken = data.nextPageToken || '';
+            } while (pageToken);
+            return allFiles;
+        }
+
+        // --- Views ---
+        async function loadFolder(folderId) {
+            document.getElementById('grid').innerHTML = '';
+            document.getElementById('player-view').style.display = 'none';
+            document.getElementById('folder-select-view').style.display = 'none';
+            document.getElementById('loading').style.display = 'block';
+            document.getElementById('error').style.display = 'none';
+
+            const titleEl = document.getElementById('folder-title');
+            if (folderId === rootFolder) {
+                titleEl.style.display = 'none';
+            } else {
+                titleEl.textContent = formatFolderName(currentFolderName);
+                titleEl.style.display = 'block';
+            }
+
+            try {
+                const files = await listFiles(folderId);
+                if (files.length === 0 && !accessToken) return;
+                currentFolder = folderId;
+                document.getElementById('loading').style.display = 'none';
+
+                const folders = files.filter(f => f.mimeType === 'application/vnd.google-apps.folder');
+                const videos = files.filter(f => f.mimeType.startsWith('video/'));
+                const grid = document.getElementById('grid');
+
+                if (folders.length > 0) {
+                    folders.sort((a, b) => a.name.localeCompare(b.name));
+                    for (const folder of folders) {
+                        const card = document.createElement('div');
+                        card.className = 'card folder-card';
+                        card.innerHTML = `<h3>${formatFolderName(folder.name)}</h3><div class="meta">Folder</div>`;
+                        card.onclick = () => {
+                            navHistory.push({ id: currentFolder, name: currentFolderName });
+                            currentFolderName = folder.name;
+                            updateBackBtn();
+                            loadFolder(folder.id);
+                        };
+                        grid.appendChild(card);
+                        loadFolderProgress(folder.id, card);
+                    }
+                }
+
+                if (videos.length > 0) {
+                    currentVideos = videos.sort((a, b) => a.name.localeCompare(b.name));
+                    for (let idx = 0; idx < currentVideos.length; idx++) {
+                        const video = currentVideos[idx];
+                        const card = document.createElement('div');
+                        card.className = 'card video-card';
+                        card.innerHTML = `<h3>${formatVideoName(video.name)}</h3><div class="meta">Video</div>`;
+                        const dot = document.createElement('div');
+                        dot.className = 'status-dot';
+                        card.appendChild(dot);
+                        const i = idx;
+                        card.onclick = () => playVideo(i);
+                        grid.appendChild(card);
+                        loadVideoStatusBadge(video.id, dot);
+                    }
+                }
+
+                if (folders.length === 0 && videos.length === 0) {
+                    grid.innerHTML = '<p style="padding:2rem;color:#888;">No folders or videos found here.</p>';
+                }
+                updateBackBtn();
+            } catch (e) {
+                document.getElementById('loading').style.display = 'none';
+                showError(e.message);
+            }
+        }
+
+        async function loadVideoStatusBadge(videoId, dotEl) {
+            const status = await getVideoStatus(videoId);
+            if (status !== 'pending') dotEl.classList.add(status);
+        }
+
+        async function loadFolderProgress(folderId, cardEl) {
+            try {
+                const files = await listFiles(folderId);
+                const videoIds = files.filter(f => f.mimeType.startsWith('video/')).map(f => f.id);
+                if (videoIds.length === 0) return;
+                const progress = await getFolderProgress(videoIds);
+                const pct = Math.round((progress.watched / progress.total) * 100);
+                const html = `
+                    <div class="progress-bar"><div class="progress-bar-fill" style="width:${pct}%"></div></div>
+                    <div class="progress-text">${progress.watched}/${progress.total} watched${progress.inProgress > 0 ? ` · ${progress.inProgress} in progress` : ''}</div>
+                `;
+                cardEl.querySelector('.meta').insertAdjacentHTML('afterend', html);
+            } catch (e) {}
+        }
+
+        async function playVideo(index) {
+            currentVideoIndex = index;
+            const video = currentVideos[index];
+            document.getElementById('grid').innerHTML = '';
+            document.getElementById('player-view').style.display = 'block';
+            document.getElementById('player-title').textContent = formatVideoName(video.name);
+            document.getElementById('player-frame').src = `https://drive.google.com/file/d/${video.id}/preview`;
+            document.getElementById('prev-btn').disabled = index === 0;
+            document.getElementById('next-btn').disabled = index === currentVideos.length - 1;
+
+            if (!navHistory.length || navHistory[navHistory.length - 1].id !== currentFolder) {
+                navHistory.push({ id: currentFolder, name: currentFolderName });
+            }
+            updateBackBtn();
+            const status = await getVideoStatus(video.id);
+            updateStatusButtons(status);
+        }
+
+        function updateStatusButtons(active) {
+            document.getElementById('btn-pending').className = 'status-btn' + (active === 'pending' ? ' active-pending' : '');
+            document.getElementById('btn-in_progress').className = 'status-btn' + (active === 'in_progress' ? ' active-in_progress' : '');
+            document.getElementById('btn-watched').className = 'status-btn' + (active === 'watched' ? ' active-watched' : '');
+        }
+
+        async function setStatus(status) {
+            const video = currentVideos[currentVideoIndex];
+            updateStatusButtons(status);
+            await setVideoStatus(video.id, status, currentFolderName, currentFolder);
+        }
+        window.setStatus = setStatus;
+
+        function playPrev() { if (currentVideoIndex > 0) playVideo(currentVideoIndex - 1); }
+        window.playPrev = playPrev;
+        function playNext() { if (currentVideoIndex < currentVideos.length - 1) playVideo(currentVideoIndex + 1); }
+        window.playNext = playNext;
+
+        function goBack() {
+            if (document.getElementById('player-view').style.display === 'block') {
+                document.getElementById('player-view').style.display = 'none';
+                document.getElementById('player-frame').src = '';
+                const prev = navHistory.pop();
+                currentFolderName = prev ? prev.name : '';
+                loadFolder(currentFolder);
+            } else if (navHistory.length > 0) {
+                const prev = navHistory.pop();
+                currentFolderName = prev.name;
+                loadFolder(prev.id);
+            }
+            updateBackBtn();
+        }
+        window.goBack = goBack;
+
+        function updateBackBtn() {
+            const btn = document.getElementById('back-btn');
+            const playerVisible = document.getElementById('player-view').style.display === 'block';
+            btn.classList.toggle('hidden', navHistory.length === 0 && !playerVisible);
+        }
+
+        function showError(msg) {
+            const el = document.getElementById('error');
+            el.style.display = 'block';
+            el.textContent = msg;
+        }
+
+        function formatFolderName(name) {
+            return name.replace(/[-_]/g, ' ').replace(/\b\w/g, c => c.toUpperCase()).replace(/\s+\d+$/, '');
+        }
+        function formatVideoName(name) {
+            return name.replace(/\.(mp4|mkv|webm|mov)$/i, '').replace(/^\d+_/, m => m.replace('_', '. ')).replace(/[-_]/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+        }
+
+
+        // --- Search & In Progress ---
+        let allFolders = [];
+        let cachePromise = null;
+
+        async function cacheFolderList() {
+            if (allFolders.length > 0) return;
+            if (cachePromise) return cachePromise;
+            if (!rootFolder) return;
+            cachePromise = (async () => {
+                try {
+                    await scanFoldersRecursive(rootFolder);
+                    allFolders.sort((a, b) => a.displayName.localeCompare(b.displayName));
+                } catch (e) {
+                    console.warn('Folder scan error:', e);
+                }
+            })();
+            return cachePromise;
+        }
+
+        async function scanFoldersRecursive(folderId) {
+            const files = await listFiles(folderId);
+            const folders = files.filter(f => f.mimeType === 'application/vnd.google-apps.folder');
+            const videoIds = files.filter(f => f.mimeType.startsWith('video/')).map(f => f.id);
+
+            for (const folder of folders) {
+                if (allFolders.some(f => f.id === folder.id)) continue;
+                allFolders.push({ id: folder.id, name: folder.name, displayName: formatFolderName(folder.name), parentId: folderId, videoIds: [] });
+                await scanFoldersRecursive(folder.id);
+            }
+
+            if (videoIds.length > 0 && folderId !== rootFolder) {
+                const existing = allFolders.find(f => f.id === folderId);
+                if (existing) existing.videoIds = videoIds;
+            }
+        }
+
+        function handleSearch(query) {
+            const results = document.getElementById('search-results');
+            if (!query.trim()) {
+                results.style.display = 'none';
+                return;
+            }
+            const q = query.toLowerCase();
+            const matches = allFolders.filter(f => f.displayName.toLowerCase().includes(q));
+            if (matches.length === 0) {
+                results.innerHTML = '<div class="search-item" style="color:#888;">No results</div>';
+            } else {
+                results.innerHTML = matches.slice(0, 15).map(f =>
+                    `<div class="search-item" onclick="navigateToFolder('${f.id}', '${f.name.replace(/'/g, "\\'")}')">${f.displayName}</div>`
+                ).join('');
+            }
+            results.style.display = 'block';
+        }
+        window.handleSearch = handleSearch;
+
+        function navigateToFolder(folderId, folderName) {
+            document.getElementById('search-input').value = '';
+            document.getElementById('search-results').style.display = 'none';
+            document.getElementById('in-progress-btn').classList.remove('active');
+
+            // Build navigation history by walking up the parent chain
+            navHistory = [];
+            let current = folderId;
+            const chain = [];
+            while (current && current !== rootFolder) {
+                const folder = allFolders.find(f => f.id === current);
+                if (!folder) break;
+                chain.unshift({ id: folder.parentId, name: folder.parentId === rootFolder ? '' : (allFolders.find(f => f.id === folder.parentId)?.name || '') });
+                current = folder.parentId;
+            }
+            if (chain.length === 0) chain.push({ id: rootFolder, name: '' });
+            navHistory = chain;
+
+            currentFolderName = folderName;
+            loadFolder(folderId);
+            updateBackBtn();
+        }
+        window.navigateToFolder = navigateToFolder;
+
+        async function showInProgress() {
+            const btn = document.getElementById('in-progress-btn');
+            btn.classList.toggle('active');
+            if (!btn.classList.contains('active')) {
+                navHistory = [];
+                currentFolderName = '';
+                loadFolder(rootFolder);
+                return;
+            }
+
+            document.getElementById('grid').innerHTML = '';
+            document.getElementById('player-view').style.display = 'none';
+            document.getElementById('loading').style.display = 'block';
+            document.getElementById('folder-title').style.display = 'none';
+
+            await cacheFolderList();
+            const inProgressFolders = [];
+
+            // Use cached videoIds — no extra Drive API calls
+            const foldersWithVideos = allFolders.filter(f => f.videoIds && f.videoIds.length > 0);
+            const progressChecks = foldersWithVideos.map(folder =>
+                getFolderProgress(folder.videoIds).then(progress => ({ folder, progress }))
+            );
+            const results = await Promise.all(progressChecks);
+
+            for (const { folder, progress } of results) {
+                if (progress.inProgress > 0 || (progress.watched > 0 && progress.watched < progress.total)) {
+                    inProgressFolders.push({ ...folder, progress });
+                }
+            }
+
+            document.getElementById('loading').style.display = 'none';
+            const titleEl = document.getElementById('folder-title');
+            titleEl.textContent = 'In Progress';
+            titleEl.style.display = 'block';
+
+            const grid = document.getElementById('grid');
+            grid.innerHTML = '';
+
+            if (inProgressFolders.length === 0) {
+                grid.innerHTML = '<p style="padding:2rem;color:#888;">No courses in progress yet.</p>';
+                return;
+            }
+
+            for (const folder of inProgressFolders) {
+                const card = document.createElement('div');
+                card.className = 'card folder-card';
+                const pct = Math.round((folder.progress.watched / folder.progress.total) * 100);
+                card.innerHTML = `<h3>${folder.displayName}</h3><div class="meta">Folder</div>
+                    <div class="progress-bar"><div class="progress-bar-fill" style="width:${pct}%"></div></div>
+                    <div class="progress-text">${folder.progress.watched}/${folder.progress.total} watched · ${folder.progress.inProgress} in progress</div>`;
+                card.onclick = () => {
+                    btn.classList.remove('active');
+                    navigateToFolder(folder.id, folder.name);
+                };
+                grid.appendChild(card);
+            }
+        }
+        window.showInProgress = showInProgress;
+
+        // Close search results when clicking outside
+        document.addEventListener('click', (e) => {
+            if (!e.target.closest('.search-wrap')) {
+                document.getElementById('search-results').style.display = 'none';
+            }
+        });
+
+        // --- Startup ---
+        async function startup() {
+            await new Promise(resolve => {
+                const check = () => (typeof google !== 'undefined' && google.accounts && google.accounts.oauth2 && typeof gapi !== 'undefined') ? resolve() : setTimeout(check, 100);
+                check();
+            });
+            await new Promise(resolve => gapi.load('picker', resolve));
+            pickerInited = true;
+
+            initFirebase();
+            initGis();
+
+            // Try auto-login from session
+            const savedToken = localStorage.getItem('gdp_access_token');
+            const savedUid = localStorage.getItem('gdp_uid');
+            if (savedToken && savedUid) {
+                try {
+                    const res = await fetch('https://www.googleapis.com/oauth2/v1/tokeninfo?access_token=' + savedToken);
+                    if (res.ok) {
+                        accessToken = savedToken;
+                        fbUid = savedUid;
+                        await loadUserAndStart();
+                        return;
+                    }
+                } catch (e) {}
+                // Token expired, try silent refresh
+                localStorage.removeItem('gdp_access_token');
+                if (gisInited) {
+                    tokenClient.requestAccessToken({ prompt: '' });
+                    return;
+                }
+            }
+            document.getElementById('loading').style.display = 'none';
+        }
+
+        startup();
+    </script>
+</body>
+</html>
